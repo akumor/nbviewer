@@ -19,6 +19,7 @@ from urllib.parse import urlparse
 from urllib.parse import urlunparse
 
 import statsd  # type: ignore
+from jupyterhub.services.auth import HubOAuthenticated  # type: ignore
 from nbformat import current_nbformat  # type:ignore
 from nbformat import reads
 from tornado import httpclient
@@ -49,7 +50,7 @@ except ModuleNotFoundError:
 format_prefix = "/format/"
 
 
-class BaseHandler(web.RequestHandler):
+class BaseHandler(web.RequestHandler, HubOAuthenticated):
     """Base Handler class with common utilities"""
 
     def initialize(self, format=None, format_prefix="", **handler_settings):
@@ -87,47 +88,6 @@ class BaseHandler(web.RequestHandler):
 
     def set_default_headers(self):
         self.add_header("Content-Security-Policy", self.content_security_policy)
-
-    async def prepare(self):
-        """Check if the user is authenticated with JupyterHub if the hub
-        API endpoint and token are configured.
-
-        Redirect unauthenticated requests to the JupyterHub login page.
-        Do nothing if not running as a JupyterHub service.
-        """
-        # if any of these are set, assume we want to do auth, even if
-        # we're misconfigured (better safe than sorry!)
-        if self.hub_api_url or self.hub_api_token or self.hub_base_url:
-
-            def redirect_to_login():
-                self.redirect(
-                    url_path_join(self.hub_base_url, "/hub/login")
-                    + "?"
-                    + urlencode({"next": self.request.path})
-                )
-
-            encrypted_cookie = self.get_cookie(self.hub_cookie_name)
-            if not encrypted_cookie:
-                # no cookie == not authenticated
-                return redirect_to_login()
-
-            try:
-                # if the hub returns a success code, the user is known
-                await self.http_client.fetch(
-                    url_path_join(
-                        self.hub_api_url,
-                        "authorizations/cookie",
-                        self.hub_cookie_name,
-                        quote(encrypted_cookie, safe=""),
-                    ),
-                    headers={"Authorization": "token " + self.hub_api_token},
-                )
-            except httpclient.HTTPError as ex:
-                if ex.response.code == 404:
-                    # hub does not recognize the cookie == not authenticated
-                    return redirect_to_login()
-                # let all other errors surface: they're unexpected
-                raise ex
 
     # Properties
 
@@ -186,10 +146,6 @@ class BaseHandler(web.RequestHandler):
     @property
     def hub_base_url(self):
         return self.settings["hub_base_url"]
-
-    @property
-    def hub_cookie_name(self):
-        return "jupyterhub-services"
 
     @property
     def index(self):

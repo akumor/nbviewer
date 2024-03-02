@@ -4,6 +4,8 @@
 #  Distributed under the terms of the BSD License.  The full license is in
 #  the file COPYING, distributed as part of this software.
 # -----------------------------------------------------------------------------
+import os
+from jupyterhub.services.auth import HubOAuthCallbackHandler  # type: ignore
 from tornado import web
 
 from .providers import _load_handler_from_location
@@ -38,7 +40,7 @@ class IndexHandler(BaseHandler):
             text=self.frontpage_setup.get("text", None),
             show_input=self.frontpage_setup.get("show_input", True),
             sections=self.frontpage_setup.get("sections", []),
-            **namespace
+            **namespace,
         )
 
     def get(self):
@@ -141,6 +143,16 @@ def init_handlers(formats, providers, base_url, localfiles, **handler_kwargs):
         providers.insert(0, "nbviewer.providers.local")
 
     handlers = provider_handlers(providers, **handler_kwargs)
+    if os.environ.get("JUPYTERHUB_SERVICE_PREFIX") is not None:
+        handlers.append(
+            (
+                url_path_join(
+                    os.environ["JUPYTERHUB_SERVICE_PREFIX"], "oauth_callback"
+                ),
+                HubOAuthCallbackHandler,
+                {},
+            )
+        )
 
     raw_handlers = (
         pre_providers
