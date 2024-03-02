@@ -8,17 +8,18 @@ import asyncio
 import hashlib
 import pickle
 import time
+import urllib.parse
 from contextlib import contextmanager
 from datetime import datetime
 from functools import wraps
 from html import escape
 from http.client import responses
-from urllib.parse import quote
 from urllib.parse import urlencode
 from urllib.parse import urlparse
 from urllib.parse import urlunparse
 
 import statsd  # type: ignore
+from jupyterhub.services.auth import HubOAuthenticated  # type: ignore
 from nbformat import current_nbformat  # type:ignore
 from nbformat import reads
 from tornado import httpclient
@@ -49,7 +50,7 @@ except ModuleNotFoundError:
 format_prefix = "/format/"
 
 
-class BaseHandler(web.RequestHandler):
+class BaseHandler(HubOAuthenticated, web.RequestHandler):
     """Base Handler class with common utilities"""
 
     def initialize(self, format=None, format_prefix="", **handler_settings):
@@ -90,14 +91,28 @@ class BaseHandler(web.RequestHandler):
 
     async def prepare(self):
         """Check if the user is authenticated with JupyterHub if the hub
-        API endpoint and token are configured.
+        API endpoint is configured.
 
         Redirect unauthenticated requests to the JupyterHub login page.
         Do nothing if not running as a JupyterHub service.
         """
         # if any of these are set, assume we want to do auth, even if
         # we're misconfigured (better safe than sorry!)
-        if self.hub_api_url or self.hub_api_token or self.hub_base_url:
+        if self.hub_api_url or self.hub_base_url:
+            if not self.get_current_user():
+                if self.request.method in ("GET", "HEAD"):
+                    url = self.get_login_url()
+                    if "?" not in url:
+                        if urllib.parse.urlsplit(url).scheme:
+                            # if login url is absolute, make next absolute too
+                            next_url = self.request.full_url()
+                        else:
+                            assert self.request.uri is not None
+                            next_url = self.request.uri
+                        url += "?" + urlencode(dict(next=next_url))
+                    self.redirect(url)
+                    return None
+                raise web.HTTPError(403)
 
             def redirect_to_login():
                 self.redirect(
@@ -106,21 +121,10 @@ class BaseHandler(web.RequestHandler):
                     + urlencode({"next": self.request.path})
                 )
 
-            encrypted_cookie = self.get_cookie(self.hub_cookie_name)
-            if not encrypted_cookie:
-                # no cookie == not authenticated
-                return redirect_to_login()
-
             try:
-                # if the hub returns a success code, the user is known
+                # if the hub returns a user model, the user is known
                 await self.http_client.fetch(
-                    url_path_join(
-                        self.hub_api_url,
-                        "authorizations/cookie",
-                        self.hub_cookie_name,
-                        quote(encrypted_cookie, safe=""),
-                    ),
-                    headers={"Authorization": "token " + self.hub_api_token},
+                    url_path_join(self.hub_api_url),
                 )
             except httpclient.HTTPError as ex:
                 if ex.response.code == 404:
@@ -186,10 +190,6 @@ class BaseHandler(web.RequestHandler):
     @property
     def hub_base_url(self):
         return self.settings["hub_base_url"]
-
-    @property
-    def hub_cookie_name(self):
-        return "jupyterhub-services"
 
     @property
     def index(self):

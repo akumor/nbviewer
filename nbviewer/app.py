@@ -645,7 +645,7 @@ class NBViewer(Application):
             self.providers,
             self._base_url,
             self.localfiles,
-            **handler_kwargs
+            **handler_kwargs,
         )
 
         # NBConvert config
@@ -668,6 +668,7 @@ class NBViewer(Application):
             client=self.client,
             config=self.config,
             content_security_policy=self.content_security_policy,
+            cookie_secret=os.urandom(32),
             default_format=self.default_format,
             fetch_kwargs=self.fetch_kwargs,
             formats=self.formats,
@@ -687,6 +688,9 @@ class NBViewer(Application):
             localfile_path=os.path.abspath(self.localfiles),
             log=self.log,
             log_function=log_request,
+            login_url=os.path.join(os.getenv("JUPYTERHUB_BASE_URL"), "hub/login")
+            if os.getenv("JUPYTERHUB_BASE_URL") is not None
+            else None,
             mathjax_url=self.mathjax_url,
             max_cache_uris=self.max_cache_uris,
             pool=self.pool,
@@ -702,6 +706,26 @@ class NBViewer(Application):
             statsd_port=self.statsd_port,
             statsd_prefix=self.statsd_prefix,
         )
+
+        if os.getenv("JUPYTERHUB_BASE_URL") or os.getenv("JUPYTERHUB_API_URL"):
+            settings.update(
+                {
+                    "login_url": "/oauth_callback",
+                    "cookie_secret": os.urandom(32),
+                    "client_id": os.getenv("JUPYTERHUB_CLIENT_ID"),
+                    "redirect_uri": url_path_join(
+                        os.getenv("JUPYTERHUB_BASE_URL"),
+                        os.getenv("JUPYTERHUB_SERVICE_PREFIX", ""),
+                        "/oauth_callback",
+                    ),
+                    "authorize_url": os.getenv("JUPYTERHUB_BASE_URL").rstrip("/")
+                    + "/hub/api/oauth2/authorize",
+                    "token_url": os.getenv("JUPYTERHUB_BASE_URL").rstrip("/")
+                    + "/hub/api/oauth2/token",
+                    "user_url": os.getenv("JUPYTERHUB_BASE_URL").rstrip("/")
+                    + "/hub/api/user",
+                }
+            )
 
         if self.localfiles:
             self.log.warning(
