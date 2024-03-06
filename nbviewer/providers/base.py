@@ -13,8 +13,6 @@ from datetime import datetime
 from functools import wraps
 from html import escape
 from http.client import responses
-from urllib.parse import quote
-from urllib.parse import urlencode
 from urllib.parse import urlparse
 from urllib.parse import urlunparse
 
