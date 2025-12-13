@@ -150,7 +150,7 @@ python-dateutil==2.9.0.post0
     #   arrow
     #   elasticsearch
     #   jupyter-client
-python-json-logger==3.3.0
+python-json-logger==4.0.0
     # via jupyter-events
 pyyaml==6.0.2
     # via jupyter-events
